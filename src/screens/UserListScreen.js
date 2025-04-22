@@ -1,85 +1,79 @@
 import React, { useEffect, useState } from 'react';
-import { View, FlatList, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { auth, db } from '../services/firebaseConfig';
+import { View, Text, FlatList, StyleSheet, Button } from 'react-native';
+import { db } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const UserListScreen = ({ navigation }) => {
   const [users, setUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    const subscriber = db.collection('users').onSnapshot(snapshot => {
-      const currentUid = auth.currentUser?.uid;
-      console.log('Current UID:', currentUid);
+    const fetchUsers = async () => {
+      try {
+        const snapshot = await db.collection('users').get();
+        const usersData = snapshot.docs.map(doc => doc.data());
 
-      const allUsers = snapshot.docs.map(doc => doc.data());
-      console.log('All Users:', allUsers);
+        const loggedInUser = await AsyncStorage.getItem('user');
+        if (loggedInUser) {
+          setCurrentUser(JSON.parse(loggedInUser));
 
-      const filtered = allUsers.filter(user => user.uid !== currentUid);
-      console.log('Filtered Users:', filtered);
+          const filteredUsers = usersData.filter(user => user.uid !== JSON.parse(loggedInUser).uid);
+          setUsers(filteredUsers);
+        }
+      } catch (error) {
+        console.log('Error fetching users:', error);
+      }
+    };
 
-      setUsers(filtered);
-    });
-
-    return () => subscriber();
+    fetchUsers();
   }, []);
 
-  const goToChat = (user) => {
-    const currentUid = auth.currentUser?.uid; 
-    const roomId = [currentUid, user.uid].sort().join('_');
-    navigation.navigate('Chat', { roomId, otherUser: user });
+  const startChat = (user) => {
+    const currentUid = currentUser.uid;
+    const selectedUid = user.uid;
+  
+    const roomId = currentUid < selectedUid
+      ? `${currentUid}_${selectedUid}`
+      : `${selectedUid}_${currentUid}`;
+  
+    navigation.navigate('Chat', { roomId, selectedUser: user });
   };
-
-  const renderItem = ({ item }) => (
-    <TouchableOpacity onPress={() => goToChat(item)} style={styles.userCard}>
-      <Text style={styles.userEmail}>{item.email}</Text>
-    </TouchableOpacity>
-  );
+  
 
   return (
     <View style={styles.container}>
-      <View style={{alignItems:'center',justifyContent:'center'}}>
-      <Text style={{fontSize:20,fontWeight:'600'}}>Users List</Text>
+      <View style={{alignItems:'center'}}>
+      {currentUser && <Text style={{fontSize:15}}>Welcome, {currentUser.email}</Text>}
       </View>
-      {users.length === 0 ? (
-        <Text style={styles.noUserText}>No other users found.</Text>
-      ) : (
-        <FlatList
-          data={users}
-          keyExtractor={item => item.uid}
-          renderItem={renderItem}
-        />
-      )}
+      <FlatList
+        data={users}
+        renderItem={({ item }) => (
+          <View style={styles.userItem}>
+            <Text>{item.email}</Text>
+            <Button title="Chat" onPress={() => startChat(item)} />
+          </View>
+        )}
+        keyExtractor={item => item.uid}
+      />
     </View>
   );
 };
 
-export default UserListScreen;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f6f8fa',
-    padding: 16,
+    justifyContent: 'center',
+    padding: 20,
   },
-  noUserText: {
-    textAlign: 'center',
-    fontSize: 16,
-    marginTop: 20,
-    color: '#555',
-  },
-  userCard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    elevation: 3, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  userEmail: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
+  userItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    top:20
   },
 });
+
+export default UserListScreen;

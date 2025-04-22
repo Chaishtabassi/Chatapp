@@ -1,19 +1,45 @@
 import React, { useEffect, useState } from 'react';
-import { View, TextInput, Button, FlatList, Text, StyleSheet } from 'react-native';
-import { auth, db } from '../services/firebaseConfig';
+import {
+  View,
+  TextInput,
+  Button,
+  Text,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
+import { db } from '../services/firebaseConfig';
 import { saveChat, getChat } from '../storage/chatStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ChatScreen = ({ route }) => {
-  const { roomId } = route.params;
+  const { roomId, selectedUser } = route.params;
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const userData = await AsyncStorage.getItem('user');
+        if (userData) {
+          setCurrentUser(JSON.parse(userData));
+        }
+      } catch (error) {
+        console.log('Error getting current user:', error);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
 
   const sendMessage = async () => {
+    if (!message.trim() || !currentUser) return;
+
     const msg = {
       text: message,
-      sender: auth.currentUser.uid,
+      sender: currentUser.uid,
       createdAt: Date.now(),
     };
+
     await db.collection('chats').doc(roomId).collection('messages').add(msg);
     setMessage('');
   };
@@ -31,35 +57,37 @@ const ChatScreen = ({ route }) => {
       });
 
     return unsubscribe;
-  }, []);
+  }, [roomId]);
 
   useEffect(() => {
     (async () => {
       const localMessages = await getChat(roomId);
       if (localMessages) setMessages(localMessages);
     })();
-  }, []);
+  }, [roomId]);
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={messages}
-        keyExtractor={(_, index) => index.toString()}
-        renderItem={({ item }) => (
+      <ScrollView style={styles.messagesContainer}>
+        {messages.map((item, index) => (
           <View
+            key={index}
             style={[
               styles.messageBubble,
               {
-                backgroundColor: item.sender === auth.currentUser.uid ? '#dcf8c6' : '#fff',
-                alignSelf: item.sender === auth.currentUser.uid ? 'flex-end' : 'flex-start',
+                backgroundColor:
+                  item.sender === currentUser?.uid ? '#dcf8c6' : '#fff',
+                alignSelf:
+                  item.sender === currentUser?.uid
+                    ? 'flex-end'
+                    : 'flex-start',
               },
-            ]}
-          >
+            ]}>
             <Text style={styles.messageText}>{item.text}</Text>
           </View>
-        )}
-      />
-      
+        ))}
+      </ScrollView>
+
       <View style={styles.inputContainer}>
         <TextInput
           placeholder="Type a message..."
@@ -67,7 +95,12 @@ const ChatScreen = ({ route }) => {
           onChangeText={setMessage}
           style={styles.textInput}
         />
-        <Button title="Send" onPress={sendMessage} color="#4CAF50" />
+        <Button
+          title="Send"
+          onPress={sendMessage}
+          color="#4CAF50"
+          disabled={!message.trim() || !currentUser}
+        />
       </View>
     </View>
   );
@@ -78,6 +111,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f6f8fa',
     padding: 16,
+  },
+  headerText: {
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  messagesContainer: {
+    flex: 1,
   },
   messageBubble: {
     maxWidth: '75%',
